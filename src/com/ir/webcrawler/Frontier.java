@@ -1,5 +1,6 @@
 package com.ir.webcrawler;
 
+import java.net.MalformedURLException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -11,39 +12,41 @@ import java.util.Set;
 public class Frontier {
 	HashMap<String,Tuple> frontier;
 	int counter;
-	int MAXDOC = 5000;
-
+	int MAXDOC = 20000;
+	HashMap<String,Long> domainStart = new HashMap<String,Long>();
+	HashMap<String,Integer> countOccurences = new HashMap<String,Integer>();
+	
 	public Frontier()
 	{
 		frontier = new HashMap<String,Tuple>();
 		counter=1;
 	}
 
-	public void push(ArrayList<String> topicwords,String url,int c)
+	public void push(ArrayList<String> topicwords,String url,int c) throws MalformedURLException
 	{
-		/*if(frontier.size() > MAXDOC) {
+		if(frontier.size() > MAXDOC) {
 			removeMinScore(topicwords);
-		}*/
+		}
 		frontier.put(url,new Tuple(url,c,counter++));
 	}
 
-	public void push(ArrayList<String> topicwords,String url,int c,int priority)
+	public void push(ArrayList<String> topicwords,String url,int c,int priority) throws MalformedURLException
 	{
-		/*if(frontier.size() > MAXDOC) {
+		if(frontier.size() > MAXDOC) {
 			removeMinScore(topicwords);
-		}*/
+		}
 		frontier.put(url,new Tuple(url,c,priority));
 	}
 
-	private void removeMinScore(ArrayList<String> topicwords) {
-		int NUM = 500;
+	private void removeMinScore(ArrayList<String> topicwords) throws MalformedURLException {
+		int NUM = 3000;
 		Iterator<String> keys = frontier.keySet().iterator();
 		double min=Integer.MAX_VALUE;
 		HashMap<Integer,ArrayList<String>> res = new HashMap<Integer,ArrayList<String>>();
 		while(keys.hasNext()){
 			String key = (String) keys.next();
-			int score = (frontier.get(key).getInlink()
-					*getWordsFreq(key,topicwords));
+			int score = (int) ((frontier.get(key).getInlink()*
+					getWordsFreq(key,topicwords))/(1+calcOccurenceAvg(new Url(key).getHost())));
 			ArrayList<String> a = res.containsKey(score) ? res.get(score) : new ArrayList<String>();
 			a.add(key);
 			res.put(score, a);
@@ -53,10 +56,17 @@ public class Frontier {
 		int count=0;
 		int j=0;
 		//System.out.println(res.size()+" "+res.get(sc.get(0)).size());
-		for(int i=0;j<res.size()&&i<res.get(sc.get(j)).size()&&count<=NUM;i++,count++)
-				frontier.remove(res.get(sc.get(j++)).get(i));
+		while(count<=NUM && j<res.size()){
+			for(int i=0;i<res.get(sc.get(j)).size() && count<=NUM;i++)
+				{
+					frontier.remove(res.get(sc.get(j)).get(i));
+					count++;
+				}
+			j++;
+		}
 	}
 
+	
 	public void add(ArrayList<Tuple> temp)
 	{
 		for(int i=0;i<temp.size();i++)
@@ -69,7 +79,7 @@ public class Frontier {
 		return urls.contains(url);
 	}
 
-	public Tuple pop(ArrayList<String> topicwords)
+	public Tuple pop(ArrayList<String> topicwords) throws MalformedURLException
 	{
 		String res =null;
 		if(frontier.size()==0) return null;
@@ -80,9 +90,9 @@ public class Frontier {
 		while(keys.hasNext()){
 			String key = (String) keys.next();
 
-			double score = frontier.get(key).getInlink()==Integer.MAX_VALUE ? Integer.MAX_VALUE : 
+			int score = (int) (frontier.get(key).getInlink()==Integer.MAX_VALUE ? Integer.MAX_VALUE : 
 				(frontier.get(key).getInlink()*
-						getWordsFreq(key,topicwords));
+						getWordsFreq(key,topicwords))/(1+calcOccurenceAvg(new Url(key).getHost())));
 			//System.out.println("key "+key+" "+score+"\n");
 			if(score >= maxscore)
 			{
@@ -114,7 +124,28 @@ public class Frontier {
 		}
 		Tuple t = frontier.get(res);
 		frontier.remove(res);
+		String host ="";
+		try {
+			host = new Url(res).getHost();
+			if(!domainStart.containsKey(host)) {
+				domainStart.put(host, System.currentTimeMillis());
+				countOccurences.put(host, 1);
+				System.out.println("Added start time for "+host);
+			}
+			else countOccurences.put(host, countOccurences.get(host)+1);
+		} catch (MalformedURLException e) {
+			System.out.println("Start time not recorded for "+host);
+		}
 		return t;
+	}
+
+	private double calcOccurenceAvg(String host) {
+		if(!domainStart.containsKey(host)) return 0;
+		long start = domainStart.get(host);
+		long timeelapsed = (System.currentTimeMillis()-start)/1000;
+		int count = countOccurences.get(host);
+		
+		return count/(double)timeelapsed;
 	}
 
 	private int getWordsFreq(String key, ArrayList<String> topicwords) {
